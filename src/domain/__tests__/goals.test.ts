@@ -1,5 +1,5 @@
 import type { GoalTemplate } from '../../types';
-import { buildDailyGoals, goalId } from '../goals';
+import { buildDailyGoals, goalId, minimumDurationMinutes } from '../goals';
 
 const templates: GoalTemplate[] = [
   {
@@ -67,7 +67,7 @@ describe('gunluk hedef uretimi (README bolum 5 ve 22)', () => {
     }
   });
 
-  it('dusuk enerjide ana kopruyu kuculterek minimum surume yaklastirir', () => {
+  it('dusuk enerjide ana kopruyu tanimli minimum surume indirir', () => {
     const goals = buildDailyGoals(templates, {
       area: 'movement',
       energy: 'low',
@@ -75,7 +75,12 @@ describe('gunluk hedef uretimi (README bolum 5 ve 22)', () => {
     });
     const main = goals.find((g) => g.tier === 'mainBridge')!;
     expect(main.difficulty).toBe('gentle');
-    expect(main.durationMinutes).toBe(15); // 30 / 2
+    expect(main.completionCriteria).toBe(main.minimumVersion);
+    expect(main.durationMinutes).toBe(7);
+  });
+
+  it('minimum metninde dakika yoksa mevcut sureyi korur', () => {
+    expect(minimumDurationMinutes('tek satir not', 10)).toBe(10);
   });
 
   it('hedef kimligi gun+kademe ile kararlidir (idempotency icin)', () => {
