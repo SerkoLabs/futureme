@@ -17,15 +17,29 @@ export function goalId(date: string, tier: GoalTier): string {
   return `${date}:${tier}`;
 }
 
-/** Dusuk enerjide sureyi kuculterek minimum surume yaklastirir. */
+/**
+ * Minimum surum metnindeki dakika degerini okur. Metinde dakika yoksa verilen
+ * sureyi korur. Boylece UI'daki olcut ile sure gostergesi birbiriyle celismez.
+ */
+export function minimumDurationMinutes(
+  minimumVersion: string,
+  fallback?: number,
+): number | undefined {
+  const match = minimumVersion.match(/\b(\d{1,3})\s*(?:dakika|dk)\b/i);
+  if (!match) return fallback;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** Dusuk enerjide hedefi dogrudan tanimli minimum surume getirir. */
 function scaleForEnergy(template: GoalTemplate, energy: EnergyLevel): GoalTemplate {
   if (energy !== 'low') return template;
-  const scaled: GoalTemplate = { ...template, difficulty: 'gentle' };
-  if (typeof template.durationMinutes === 'number') {
-    scaled.durationMinutes = Math.max(5, Math.round(template.durationMinutes / 2));
-    scaled.completionCriteria = template.minimumVersion;
-  }
-  return scaled;
+  return {
+    ...template,
+    difficulty: 'gentle',
+    completionCriteria: template.minimumVersion,
+    durationMinutes: minimumDurationMinutes(template.minimumVersion, template.durationMinutes),
+  };
 }
 
 /** Bir sablondan tam bir gunluk hedef nesnesi olusturur ve puanlari atar. */

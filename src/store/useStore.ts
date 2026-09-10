@@ -23,6 +23,7 @@ import {
   computeBalance,
   dayKey,
   emptyStreaks,
+  minimumDurationMinutes,
   recordBond,
   recordEvidence,
   safetyResponse,
@@ -54,7 +55,6 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-/** Yerel bugunun gun anahtari. */
 export function today(): string {
   return dayKey(new Date());
 }
@@ -70,7 +70,7 @@ const DEFAULT_PROFILE: Profile = {
     voice: false,
     ai: true,
     analytics: false,
-    modelTraining: false, // varsayilan olarak kapali (README bolum 17)
+    modelTraining: false,
   },
   notifications: {
     morning: true,
@@ -102,6 +102,39 @@ export interface SafetyState {
   resources: { label: string; value: string }[];
 }
 
+const CLEAR_SAFETY: SafetyState = {
+  suspended: false,
+  title: '',
+  message: '',
+  resources: [],
+};
+
+function crisisSafetyState(): SafetyState {
+  const response = safetyResponse('crisis');
+  if (!response) return CLEAR_SAFETY;
+  return {
+    suspended: true,
+    title: response.title,
+    message: response.message,
+    resources: response.resources,
+  };
+}
+
+function thoughtRecordText(record: Omit<ThoughtRecord, 'id' | 'createdAt'>): string {
+  return [
+    record.situation,
+    record.automaticThought,
+    record.distortion,
+    record.emotion,
+    record.behavior,
+    record.balancedThought,
+    record.experiment,
+    record.learning,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 interface StoreState {
   hydrated: boolean;
   onboardingComplete: boolean;
@@ -115,20 +148,13 @@ interface StoreState {
   messages: ChatMessage[];
   safety: SafetyState;
 
-  // --- turetilmis ---
   balance: () => Balance;
   getPlan: (date: string) => DailyPlan | undefined;
-
-  // --- onboarding ---
   completeOnboarding: (payload: OnboardingPayload) => void;
   resetAll: () => void;
-
-  // --- ayarlar ---
   setConsent: (key: keyof Consents, value: boolean) => void;
   setNotificationPref: (key: keyof NotificationPrefs, value: boolean | string) => void;
   setAccessibilityPref: (key: keyof AccessibilityPrefs, value: boolean) => void;
-
-  // --- gunluk dongu ---
   startMorning: (date: string) => void;
   setEnergy: (date: string, energy: EnergyLevel) => void;
   shrinkGoal: (date: string, goalId: string) => void;
@@ -136,11 +162,7 @@ interface StoreState {
   commitPlan: (date: string) => void;
   completeGoal: (date: string, goalId: string) => void;
   saveReflection: (date: string, reflection: Omit<EveningReflection, 'createdAt'>) => void;
-
-  // --- BDT ---
   addThoughtRecord: (record: Omit<ThoughtRecord, 'id' | 'createdAt'>) => void;
-
-  // --- sohbet ---
   sendMessage: (text: string) => SafetyLabel;
   acknowledgeSafety: () => void;
 }
@@ -180,7 +202,7 @@ export const useStore = create<StoreState>()(
       evidence: [],
       thoughtRecords: [],
       messages: [],
-      safety: { suspended: false, title: '', message: '', resources: [] },
+      safety: CLEAR_SAFETY,
 
       balance: (): Balance => computeBalance(get().ledger),
       getPlan: (date) => get().plansByDate[date],
@@ -208,7 +230,7 @@ export const useStore = create<StoreState>()(
           evidence: [],
           thoughtRecords: [],
           messages: [],
-          safety: { suspended: false, title: '', message: '', resources: [] },
+          safety: CLEAR_SAFETY,
         })),
 
       setConsent: (key, value) =>
@@ -226,10 +248,12 @@ export const useStore = create<StoreState>()(
 
       startMorning: (date) => {
         const s = get();
-        if (!s.journey) return;
-        if (s.plansByDate[date]) return; // bugunun plani zaten var
-        const energy: EnergyLevel = 'medium';
-        const goals = buildDailyGoals(GOAL_TEMPLATES, { area: s.journey.area, energy, date });
+        if (!s.journey || s.plansByDate[date]) return;
+        const goals = buildDailyGoals(GOAL_TEMPLATES, {
+          area: s.journey.area,
+          energy: 'medium',
+          date,
+        });
         const plan: DailyPlan = {
           date,
           energy: null,
@@ -253,19 +277,22 @@ export const useStore = create<StoreState>()(
           const plan = s.plansByDate[date];
           if (!plan || plan.status === 'closed') return {} as Partial<StoreState>;
           const target = plan.goals.find((goal) => goal.id === goalId);
-          if (!target || target.completed) return {} as Partial<StoreState>;
-          const goals = plan.goals.map((g) =>
-            g.id === goalId
+          if (!target || target.completed || target.completionCriteria === target.minimumVersion) {
+            return {} as Partial<StoreState>;
+          }
+          const goals = plan.goals.map((goal) =>
+            goal.id === goalId
               ? {
-                  ...g,
-                  completionCriteria: g.minimumVersion,
+                  ...goal,
+                  completionCriteria: goal.minimumVersion,
                   difficulty: 'gentle' as const,
-                  durationMinutes: g.durationMinutes
-                    ? Math.max(5, Math.round(g.durationMinutes / 2))
-                    : undefined,
+                  durationMinutes: minimumDurationMinutes(
+                    goal.minimumVersion,
+                    goal.durationMinutes,
+                  ),
                   edited: true,
                 }
-              : g,
+              : goal,
           );
           return { plansByDate: { ...s.plansByDate, [date]: { ...plan, goals } } };
         }),
@@ -277,8 +304,15 @@ export const useStore = create<StoreState>()(
           if (!plan || plan.status !== 'draft' || !normalizedTitle) {
             return {} as Partial<StoreState>;
           }
-          const goals = plan.goals.map((g) =>
-            g.id === goalId ? { ...g, title: normalizedTitle, edited: true } : g,
+          const goals = plan.goals.map((goal) =>
+            goal.id === goalId
+              ? {
+                  ...goal,
+                  title: normalizedTitle,
+                  safetyLabel: classifyText(`${normalizedTitle} ${goal.why}`),
+                  edited: true,
+                }
+              : goal,
           );
           return { plansByDate: { ...s.plansByDate, [date]: { ...plan, goals } } };
         }),
@@ -299,13 +333,14 @@ export const useStore = create<StoreState>()(
           ) {
             return {} as Partial<StoreState>;
           }
-          const ledger = applyEntries(s.ledger, sendThreeEntries(date, nowIso()));
-          const streaks = recordBond(s.streaks, date);
-          const messages = pushMessage(s.messages, 'future', FUTURE_SELF.morning(s.profile.displayName || undefined));
           return {
-            ledger,
-            streaks,
-            messages,
+            ledger: applyEntries(s.ledger, sendThreeEntries(date, nowIso())),
+            streaks: recordBond(s.streaks, date),
+            messages: pushMessage(
+              s.messages,
+              'future',
+              FUTURE_SELF.morning(s.profile.displayName || undefined),
+            ),
             plansByDate: {
               ...s.plansByDate,
               [date]: { ...plan, status: 'committed', sentToFutureSelf: true },
@@ -315,20 +350,18 @@ export const useStore = create<StoreState>()(
 
       completeGoal: (date, goalId) =>
         set((s) => {
-          if (s.safety.suspended) return {} as Partial<StoreState>; // kriz aninda oyun/puan durur
+          if (s.safety.suspended) return {} as Partial<StoreState>;
           const plan = s.plansByDate[date];
           if (!plan || plan.status !== 'committed' || !plan.sentToFutureSelf) {
             return {} as Partial<StoreState>;
           }
-          const goal = plan.goals.find((g) => g.id === goalId);
+          const goal = plan.goals.find((candidate) => candidate.id === goalId);
           if (!goal || goal.completed) return {} as Partial<StoreState>;
 
           const completedAt = nowIso();
-          const goals = plan.goals.map((g) =>
-            g.id === goalId ? { ...g, completed: true, completedAt } : g,
+          const goals = plan.goals.map((candidate) =>
+            candidate.id === goalId ? { ...candidate, completed: true, completedAt } : candidate,
           );
-          const ledger = applyEntries(s.ledger, completionEntries(goal, date, completedAt));
-          const streaks = recordEvidence(s.streaks, date);
           const evidenceItem: Evidence = {
             id: newId('ev'),
             goalId: goal.id,
@@ -338,13 +371,12 @@ export const useStore = create<StoreState>()(
             title: goal.title,
             durationMinutes: goal.durationMinutes,
           };
-          const messages = pushMessage(s.messages, 'future', FUTURE_SELF.onComplete(goal.tier));
           return {
             plansByDate: { ...s.plansByDate, [date]: { ...plan, goals } },
-            ledger,
-            streaks,
+            ledger: applyEntries(s.ledger, completionEntries(goal, date, completedAt)),
+            streaks: recordEvidence(s.streaks, date),
             evidence: [evidenceItem, ...s.evidence],
-            messages,
+            messages: pushMessage(s.messages, 'future', FUTURE_SELF.onComplete(goal.tier)),
           };
         }),
 
@@ -354,6 +386,9 @@ export const useStore = create<StoreState>()(
           if (!plan || plan.status !== 'committed' || !plan.sentToFutureSelf) {
             return {} as Partial<StoreState>;
           }
+          const label = classifyText(
+            `${reflection.didWhat} ${reflection.learned} ${reflection.easierTomorrow}`,
+          );
           return {
             plansByDate: {
               ...s.plansByDate,
@@ -363,39 +398,39 @@ export const useStore = create<StoreState>()(
                 reflection: { ...reflection, createdAt: nowIso() },
               },
             },
+            ...(shouldSuspendGame(label) ? { safety: crisisSafetyState() } : {}),
           };
         }),
 
       addThoughtRecord: (record) =>
-        set((s) => ({
-          thoughtRecords: [
-            { ...record, id: newId('tr'), createdAt: nowIso() },
-            ...s.thoughtRecords,
-          ],
-        })),
+        set((s) => {
+          const label = classifyText(thoughtRecordText(record));
+          return {
+            thoughtRecords: [
+              { ...record, id: newId('tr'), createdAt: nowIso() },
+              ...s.thoughtRecords,
+            ],
+            ...(shouldSuspendGame(label) ? { safety: crisisSafetyState() } : {}),
+          };
+        }),
 
       sendMessage: (text) => {
         const label = classifyText(text);
         set((s) => {
           let messages = pushMessage(s.messages, 'user', text);
-          if (shouldSuspendGame(label)) {
-            const res = safetyResponse('crisis')!;
-            messages = pushMessage(messages, 'future', res.message);
-            return {
-              messages,
-              safety: {
-                suspended: true,
-                title: res.title,
-                message: res.message,
-                resources: res.resources,
-              },
-            };
+
+          if (s.safety.suspended || shouldSuspendGame(label)) {
+            const safety = crisisSafetyState();
+            messages = pushMessage(messages, 'future', safety.message);
+            return { messages, safety };
           }
+
           if (label === 'sensitive') {
-            const res = safetyResponse('sensitive')!;
-            messages = pushMessage(messages, 'future', res.message);
+            const response = safetyResponse('sensitive');
+            if (response) messages = pushMessage(messages, 'future', response.message);
             return { messages };
           }
+
           messages = pushMessage(
             messages,
             'future',
@@ -406,8 +441,7 @@ export const useStore = create<StoreState>()(
         return label;
       },
 
-      acknowledgeSafety: () =>
-        set(() => ({ safety: { suspended: false, title: '', message: '', resources: [] } })),
+      acknowledgeSafety: () => set(() => ({ safety: CLEAR_SAFETY })),
     }),
     {
       name: 'futureme-store-v1',
@@ -423,14 +457,11 @@ export const useStore = create<StoreState>()(
         evidence: s.evidence,
         thoughtRecords: s.thoughtRecords,
         messages: s.messages,
-        // safety durumu kalici degildir; her acilista temiz baslar.
       }),
     },
   ),
 );
 
-// Kaliciliktan geri yukleme tamamlaninca uygulamayi acmaya hazir isaretle.
-// Yonlendirme (app/index.tsx) `hydrated` true olana kadar bekler.
 useStore.persist.onFinishHydration(() => {
   useStore.setState({ hydrated: true });
 });
