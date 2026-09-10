@@ -734,6 +734,29 @@ Bu kaynaklar ürünün etkili olduğunu peşinen kanıtlamaz. Her ana hipotez k�
 
 Bu depo ürün vizyonu ve geliştirme planıyla başlatılmıştır. İlk teknik adım, tasarım prototipindeki sabah deneyimini ve üç hedef döngüsünü çalışan bir React Native dikey dilim olarak kurmaktır.
 
+### Üretim başladı: dikey dilim
+
+Bu ilk teknik adım artık depoda mevcuttur. **Expo + TypeScript + Expo Router** ile kurulan çalışan dikey dilim çekirdek döngüyü uçtan uca içerir:
+
+- Sabah deneyimi (gelecek sahnesi → enerji işareti → üç hedefi gelecekteki benliğe gönderme)
+- Üç hedef döngüsü (Ana Köprü / Destek Adımı / Minimum Kanıt) ve üç kademeli ödül
+- **1000 AŞAMA** puan ekonomisi: değişmez `point_ledger`'dan hesaplanan bakiye, idempotent (çift puan üretmeyen) tamamlama, ayrı AŞAMA/XP
+- Bağ ve Kanıt serileri (kaçırılan gün geçmiş yolu silmez)
+- Gelecekteki benlik metin sohbeti, Kanıt Kasası, Ayna/akşam kapanışı, BDT Düşünce Laboratuvarı
+- Deterministik güvenlik kapısı: kriz sinyalinde oyun dili ve puan akışı durur
+- İzin, bildirim, erişilebilirlik ve veri sıfırlama kontrolleri
+
+Kritik puan ve güvenlik kuralları `src/domain` içinde saf, test edilebilir fonksiyonlardır ve `npm run test:domain` ile doğrulanır (README bölüm 22 kabul kriterleriyle eşlenmiştir).
+
+Kurulum, çalıştırma, mimari ve kabul kriteri eşlemesi için **[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)**.
+
+```bash
+npm install
+npm run test:domain   # puan + güvenlik + seri testleri
+npm run typecheck     # tüm proje tip denetimi
+npm run web           # uygulamayı çalıştır
+```
+
 ## Lisans
 
 Henüz bir açık kaynak lisansı seçilmemiştir. Kaynak kod ve ürün içeriği için haklar ayrıca belirlenene kadar tüm haklar saklı kabul edilmelidir.

@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "FutureMe",
+    "slug": "futureme",
+    "version": "0.1.0",
+    "icon": "./assets/futureme-icon.png",
+    "orientation": "portrait",
+    "scheme": "futureme",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.futureme.com"
+    },
+    "android": {
+      "package": "app.futureme.com",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/futureme-icon.png",
+        "backgroundColor": "#17143D"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#17143D",
+          "image": "./assets/futureme-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#17143D",
+            "image": "./assets/futureme-icon.png"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "13ee8f15-44f5-4fe6-88f9-ea5291f9b6bb"
+      }
+    },
+    "owner": "serkandnc"
+  }
+}
